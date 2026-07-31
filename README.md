@@ -22,8 +22,8 @@
 ## Содержание
 
 1. Урок 1. Зачем нужен Redux и как он устроен
-2. **Урок 2. Установка и настройка Redux Toolkit**
-3. Урок 3. Первый slice: createSlice
+2. Урок 2. Установка и настройка Redux Toolkit
+3. **Урок 3. Первый slice: createSlice**
 4. Урок 4. Подключение компонентов: useSelector и useDispatch
 5. Урок 5. Несколько слайсов и архитектура приложения
 6. Урок 6. Асинхронность: createAsyncThunk
@@ -54,90 +54,99 @@ npm run dev
 
 ---
 
-## Урок 2. Установка и настройка Redux Toolkit
+## Урок 3. Первый slice: createSlice
 
-**Цель урока:** установить Redux Toolkit и React Redux в проект, создать store и подключить его к приложению.
+**Цель урока:** научиться создавать slice — связку из reducer'а и его actions — и подключать его к store.
 
 ### Теория
 
-Redux Toolkit (RTK) состоит из двух пакетов:
+В классическом Redux нужно было отдельно объявлять константы типов экшенов, action creators и reducer со `switch`. `createSlice` из RTK делает всё это одним вызовом:
 
-- `@reduxjs/toolkit` — сам Redux Toolkit (включает Redux core, Immer, Redux Thunk, RTK Query «из коробки»);
-- `react-redux` — биндинги для React (компонент `Provider`, хуки `useSelector`/`useDispatch`).
+```ts
+createSlice({
+  // префикс для типов actions, например "counter/increment"
+  name: 'имя_слайса',
 
-`configureStore` — главная функция для создания store. В отличие от старого `createStore`, она по умолчанию:
+  // начальное состояние
+  initialState: ...,
 
-- объединяет несколько reducer'ов в один (через объект `reducer`);
-- подключает Redux Thunk middleware (для асинхронной логики, см. урок 6);
-- включает поддержку Redux DevTools Extension, если она установлена в браузере;
-- в dev-режиме включает проверки на мутации state и несериализуемые значения в actions.
-
-Чтобы компоненты React могли получить доступ к store, всё приложение оборачивается в `<Provider store={store}>` — это делается один раз, в точке входа.
-
-### Установка (установлена!)
-
-```bash
-npm install @reduxjs/toolkit react-redux
+  // reducer-функции = одновременно и action creators
+  reducers: {
+    actionName(state, action) { ... }
+  },
+})
 ```
 
-### Структура папок
+`createSlice` возвращает объект с готовыми `actions` (action creators, которые можно диспатчить) и `reducer` (готовая reducer-функция для store).
 
-Для RTK принят **feature-based** подход — код группируется не по типу файла (все reducer'ы в одной папке, все actions в другой), а по фиче:
+**Главная «магия» — Immer.** Внутри `reducers` можно писать код так, будто вы напрямую мутируете `state` (`state.value += 1`, `state.items.push(item)`) — Immer под капотом отслеживает эти «мутации» и производит из них настоящий immutable-апдейт. Реальный state в store остаётся неизменяемым, вы просто избавлены от ручных spread-операторов.
 
+Исключение: если reducer **возвращает** новое значение явно (`return newState`), то новым state становится именно оно — мутировать `state` в этом случае уже нельзя (либо мутируем, либо возвращаем, не одновременно).
+
+### Код: slice счётчика
+
+```ts
+// src/features/counter/counterSlice.ts
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+
+interface CounterState {
+  value: number
+}
+
+const initialState: CounterState = {
+  value: 0,
+}
+
+const counterSlice = createSlice({
+  name: 'counter',
+  initialState,
+  reducers: {
+    incremented(state) {
+      state.value += 1 // выглядит как мутация, но безопасно благодаря Immer
+    },
+    decremented(state) {
+      state.value -= 1
+    },
+    incrementedByAmount(state, action: PayloadAction<number>) {
+      state.value += action.payload
+    },
+  },
+})
+
+export const { 
+  incremented, 
+  decremented, 
+  incrementedByAmount 
+} = counterSlice.actions
+export default counterSlice.reducer
 ```
-src/
-  app/
-    store.ts       # конфигурация store
-    hooks.ts       # типизированные хуки (урок 4)
-  features/
-    counter/
-      counterSlice.ts
-      Counter.tsx
-      Counter.module.css
-  main.tsx
-```
 
-### Код: настройка store
+Регистрируем reducer в store:
 
 ```ts
 // src/app/store.ts
 import { configureStore } from '@reduxjs/toolkit'
+import counterReducer from '../features/counter/counterSlice'
 
 export const store = configureStore({
   reducer: {
-    // сюда будем добавлять slice-редьюсеры в следующих уроках
-    // counter: counterReducer,
+    counter: counterReducer,
   },
 })
 
-// Типы для всего приложения — пригодятся в уроке 4
 export type RootState = ReturnType<typeof store.getState>
 export type AppDispatch = typeof store.dispatch
 ```
 
-```tsx
-// src/main.tsx
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { Provider } from 'react-redux'
-import { store } from './app/store'
-import App from './App'
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <Provider store={store}>
-      <App />
-    </Provider>
-  </StrictMode>,
-)
-```
+Теперь `state.counter.value` доступен из любого компонента приложения.
 
 ### Практическое задание
 
-1. Установите `@reduxjs/toolkit` и `react-redux` в своём проекте.
-2. Создайте `src/app/store.ts` с пустым `reducer: {}` и экспортируйте типы `RootState`/`AppDispatch`.
-3. Оберните `<App />` в `<Provider store={store}>` в `main.tsx`.
-4. Установите расширение **Redux DevTools** в браузер и убедитесь, что оно «видит» ваш store (вкладка Redux покажет пустое состояние `{}`).
+Создайте свой slice (без подключения к UI — это будет в уроке 4):
+
+1. Slice `theme` с состоянием `{ mode: 'light' | 'dark' }` и actions `themeToggled` (переключает mode) и `themeSet` (принимает `'light' | 'dark'` через `payload`).
+2. Зарегистрируйте `theme`-reducer в `store.ts`.
+3. Откройте Redux DevTools — в дереве state должна появиться ветка `theme: { mode: 'light' }`.
 
 ---
 
