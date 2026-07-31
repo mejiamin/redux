@@ -21,8 +21,8 @@
 
 ## Содержание
 
-1. **Урок 1. Зачем нужен Redux и как он устроен**
-2. Урок 2. Установка и настройка Redux Toolkit
+1. Урок 1. Зачем нужен Redux и как он устроен
+2. **Урок 2. Установка и настройка Redux Toolkit**
 3. Урок 3. Первый slice: createSlice
 4. Урок 4. Подключение компонентов: useSelector и useDispatch
 5. Урок 5. Несколько слайсов и архитектура приложения
@@ -38,263 +38,111 @@
 - В своём проекте (React+Vite+TS+CSS Modules уже установлены) выполняйте практическое задание после каждого урока.
 - Не переходите к асинхронности (урок 6) и RTK Query (урок 7), пока не освоились со слайсами и хуками (уроки 3–4) — это фундамент.
 
+## Быстрый старт
+
+### Установка зависимостей
+
+```bash
+npm install
+```
+
+### Запуск в режиме разработки
+
+```bash
+npm run dev
+```
+
 ---
 
-## Урок 1. Зачем нужен Redux и как он устроен
+## Урок 2. Установка и настройка Redux Toolkit
 
-**Цель урока:** понять, какую проблему решает Redux, и разобраться с базовыми понятиями: store, action, reducer, dispatch.
+**Цель урока:** установить Redux Toolkit и React Redux в проект, создать store и подключить его к приложению.
 
 ### Теория
 
-Когда приложение растёт, состояние (state) нужно расшаривать между компонентами, далёкими друг от друга в дереве. На чистом React это решается либо «prop drilling» (прокидыванием пропсов через много промежуточных компонентов), либо Context API. Оба подхода работают, но:
+Redux Toolkit (RTK) состоит из двух пакетов:
 
-- prop drilling быстро превращается в кашу при глубокой вложенности;
-- Context неудобен при частых обновлениях — он перерисовывает всех потребителей контекста сразу.
+- `@reduxjs/toolkit` — сам Redux Toolkit (включает Redux core, Immer, Redux Thunk, RTK Query «из коробки»);
+- `react-redux` — биндинги для React (компонент `Provider`, хуки `useSelector`/`useDispatch`).
 
-Redux предлагает другой подход: **всё важное состояние приложения хранится в одном объекте — store**, а изменять его можно только по строгим правилам.
+`configureStore` — главная функция для создания store. В отличие от старого `createStore`, она по умолчанию:
 
-Три кита Redux:
+- объединяет несколько reducer'ов в один (через объект `reducer`);
+- подключает Redux Thunk middleware (для асинхронной логики, см. урок 6);
+- включает поддержку Redux DevTools Extension, если она установлена в браузере;
+- в dev-режиме включает проверки на мутации state и несериализуемые значения в actions.
 
-1. **Store** — единственный источник правды (single source of truth). Всё состояние приложения лежит в одном объекте.
-2. **Action** — обычный JS-объект с полем `type`, описывающий, *что произошло* (например, `{ type: 'cart/itemAdded', payload: { id: 1 } }`). Action не содержит логику — только данные о событии.
-3. **Reducer** — чистая функция `(state, action) => newState`. Получает текущее состояние и action, возвращает новое состояние. Reducer никогда не мутирует state напрямую и не делает побочных эффектов (запросы, таймеры и т.д.).
+Чтобы компоненты React могли получить доступ к store, всё приложение оборачивается в `<Provider store={store}>` — это делается один раз, в точке входа.
 
-Поток данных всегда односторонний:
+### Установка (установлена!)
 
-```
-UI-компонент 
-→ dispatch(action) 
-→ reducer вычисляет новый state 
-→ store обновляется 
-→ подписанные компоненты перерисовываются
+```bash
+npm install @reduxjs/toolkit react-redux
 ```
 
-Это называется **unidirectional data flow** — данные текут в одну сторону, что делает поведение приложения предсказуемым: для любого состояния всегда можно сказать, какая последовательность actions к нему привела.
+### Структура папок
 
-**Важно:** в этом курсе мы сразу используем **Redux Toolkit (RTK)** — официальный современный способ писать Redux-логику. «Классический» Redux (ручные `switch`, константы типов экшенов, immutable-апдейты вручную) сегодня в новых проектах не используется — RTK берёт всю эту рутину на себя.
+Для RTK принят **feature-based** подход — код группируется не по типу файла (все reducer'ы в одной папке, все actions в другой), а по фиче:
 
-### Когда нужен Redux, а когда — нет
+```
+src/
+  app/
+    store.ts       # конфигурация store
+    hooks.ts       # типизированные хуки (урок 4)
+  features/
+    counter/
+      counterSlice.ts
+      Counter.tsx
+      Counter.module.css
+  main.tsx
+```
 
-- **Local state (`useState`)** — состояние, нужное только одному компоненту (открыт ли dropdown, значение поля ввода).
-- **Context API** — состояние, которое редко меняется и нужно многим компонентам (тема оформления, текущий язык).
-- **Redux** — состояние, расшаренное между многими несвязанными частями приложения, часто меняющееся, требующее сложной логики обновления или удобной отладки через DevTools (история действий, time-travel).
-
-### Пример (концептуальный, без React)
-
-Чтобы увидеть идею в чистом виде — мини-пример на базовом Redux API (без Toolkit), просто чтобы «пощупать» концепцию:
+### Код: настройка store
 
 ```ts
-import { createStore } from 'redux'
+// src/app/store.ts
+import { configureStore } from '@reduxjs/toolkit'
 
-type CounterState = { value: number }
-type CounterAction = { type: 'increment' } | { type: 'decrement' }
+export const store = configureStore({
+  reducer: {
+    // сюда будем добавлять slice-редьюсеры в следующих уроках
+    // counter: counterReducer,
+  },
+})
 
-function counterReducer(
-  state: CounterState = { value: 0 },
-  action: CounterAction,
-): CounterState {
-  switch (action.type) {
-    case 'increment':
-      return { value: state.value + 1 }
-    case 'decrement':
-      return { value: state.value - 1 }
-    default:
-      return state
-  }
-}
-
-const store = createStore(counterReducer)
-
-store.subscribe(() => console.log(store.getState()))
-
-store.dispatch({ type: 'increment' }) // { value: 1 }
-store.dispatch({ type: 'increment' }) // { value: 2 }
-store.dispatch({ type: 'decrement' }) // { value: 1 }
+// Типы для всего приложения — пригодятся в уроке 4
+export type RootState = ReturnType<typeof store.getState>
+export type AppDispatch = typeof store.dispatch
 ```
 
-Обратите внимание на ручную работу: `switch`, immutable-апдейт (`{ value: state.value + 1 }`, а не `state.value++`), типы actions вручную. Начиная со следующего урока мы заменим всё это на Redux Toolkit, где тот же счётчик пишется в разы короче.
+```tsx
+// src/main.tsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { Provider } from 'react-redux'
+import { store } from './app/store'
+import App from './App'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <Provider store={store}>
+      <App />
+    </Provider>
+  </StrictMode>,
+)
+```
 
 ### Практическое задание
 
-Без кода — на бумаге или в заметках:
-
-1. Опишите для интернет-магазина (корзина товаров), какие actions понадобятся (например, `cart/itemAdded`, `cart/itemRemoved`, `cart/cleared`). Для каждого — какие данные должны лежать в `payload`.
-2. Опишите путь данных: что происходит от клика по кнопке «Добавить в корзину» до обновления счётчика товаров в шапке сайта.
-3. Подумайте: какая часть состояния вашего текущего/будущего проекта точно должна жить в Redux, а какая — остаться в `useState`?
+1. Установите `@reduxjs/toolkit` и `react-redux` в своём проекте.
+2. Создайте `src/app/store.ts` с пустым `reducer: {}` и экспортируйте типы `RootState`/`AppDispatch`.
+3. Оберните `<App />` в `<Provider store={store}>` в `main.tsx`.
+4. Установите расширение **Redux DevTools** в браузер и убедитесь, что оно «видит» ваш store (вкладка Redux покажет пустое состояние `{}`).
 
 ---
 
-## Пример практического задания
+## Дополнительные ресурсы
 
-### 1. Actions и Payload (Корзина товаров)
-
-В чистом Redux для каждого экшена мы описываем его тип и структуру полезной нагрузки (`payload`). Вот как это выглядит в коде:
-
-```typescript
-// Описываем типы данных
-type CartItem = {
-  id: string
-  name: string
-  price: number
-  quantity: number
-}
-
-type CartState = {
-  items: CartItem[]
-  totalAmount: number
-}
-
-// Описываем Actions и их payload
-type AddItemAction = {
-  type: 'cart/itemAdded'
-  payload: Omit<CartItem, 'quantity'> // Передаем данные товара, 
-                                      // количество изначально 1
-}
-
-type RemoveItemAction = {
-  type: 'cart/itemRemoved'
-  payload: string // Передаем только id товара, который нужно удалить
-}
-
-type ChangeQuantityAction = {
-  type: 'cart/quantityChanged'
-  payload: { id: string; quantity: number } // id товара и 
-                                            // его новое количество
-}
-
-type ClearCartAction = {
-  type: 'cart/cleared'
-  // payload не нужен, так как мы просто очищаем всё состояние
-}
-
-type CartAction = AddItemAction 
-  | RemoveItemAction 
-  | ChangeQuantityAction 
-  | ClearCartAction
-```
-
-### 2. Путь данных (Data Flow) в коде
-
-Давай создадим `cartReducer` и сымитируем тот самый путь от клика по кнопке до обновления счетчика.
-
-Помни про **главное правило: никаких `state.items.push()`**, только создание новых объектов и массивов (immutability).
-
-```typescript
-import { createStore } from 'redux'
-
-const initialState: CartState = {
-  items: [],
-  totalAmount: 0
-}
-
-function cartReducer(
-  state: CartState = initialState, 
-  action: CartAction
-): CartState {
-  switch (action.type) {
-    case 'cart/itemAdded': {
-      const existingItem = 
-        state.items.find(item => item.id === action.payload.id)
-      
-      let newItems: CartItem[]
-      
-      if (existingItem) {
-        // Если товар уже есть, увеличиваем количество
-        newItems = state.items.map(item => 
-          item.id === action.payload.id 
-            ? { ...item, quantity: item.quantity + 1 } 
-            : item
-        )
-      } else {
-        // Если товара нет, добавляем его со стартовым quantity: 1
-        newItems = [...state.items, { ...action.payload, quantity: 1 }]
-      }
-      
-      return {
-        items: newItems,
-        totalAmount: newItems.reduce(
-          (sum, item) => sum + item.price * item.quantity, 0
-        )
-      }
-    }
-
-    case 'cart/itemRemoved': {
-      const newItems = state.items.filter(
-        item => item.id !== action.payload
-      )
-      return {
-        items: newItems,
-        totalAmount: newItems.reduce(
-          (sum, item) => sum + item.price * item.quantity, 0
-        )
-      }
-    }
-
-    case 'cart/cleared':
-      return initialState
-
-    default:
-      return state
-  }
-}
-
-// Создаем стор
-const store = createStore(cartReducer)
-
-// Подписываемся на изменения (в React это 
-// за нас будет делать селектор useSelector)
-// Шапка сайта «слушает» стор и пересчитывает общий счетчик
-store.subscribe(() => {
-  const state = store.getState()
-  const totalItemsCount = state.items.reduce(
-    (count, item) => count + item.quantity, 0
-  )
-  
-  console.log(`
-    [Шапка сайта] Обновление! Всего товаров в корзине: ${totalItemsCount}
-  `)
-  console.log(`[Стор изнутри]:`, state)
-})
-
-// --- Имитация пути данных ---
-
-// 1. Пользователь зашел на сайт. В шапке: 0 товаров.
-// 2. Клик по кнопке «Добавить в корзину» условного смартфона:
-store.dispatch({
-  type: 'cart/itemAdded',
-  payload: { id: 'prod-1', name: 'Смартфон', price: 500 }
-}) 
-// Вывод: [Шапка сайта] Обновление! Всего товаров в корзине: 1
-
-// 3. Кликнули на тот же смартфон еще раз:
-store.dispatch({
-  type: 'cart/itemAdded',
-  payload: { id: 'prod-1', name: 'Смартфон', price: 500 }
-})
-// Вывод: [Шапка сайта] Обновление! Всего товаров в корзине: 2
-
-// 4. Очищаем корзину:
-store.dispatch({ type: 'cart/cleared' })
-// Вывод: [Шапка сайта] Обновление! Всего товаров в корзине: 0
-```
-
-### 3. Redux против useState: Что и куда?
-
-Архитектурный вопрос из задания очень важен, чтобы не превратить Redux в свалку.
-
-#### В Redux (Глобальное состояние)
-
-Сюда идет то, что нужно **многим независимым компонентам** на разных уровнях вложенности, или то, что должно **сохраняться** при переходах между страницами:
-
-* **Данные корзины** (нужны в шапке, на странице самой корзины, в карточке товара, чтобы показать "Уже в корзине").
-* **Статус авторизации и данные юзера** (нужны везде: для роутинга, аватара в шапке, оформления заказа).
-* **Тема оформления** (dark/light), если она влияет на всё приложение глобально.
-
-#### В useState / useReducer (Локальное состояние)
-
-То, что нужно **только одному компоненту** или его прямым детям прямо сейчас. Если компонент размонтируется — эти данные можно спокойно стереть:
-
-* **Состояние ввода в input** (текст сообщения, поля ввода в форме до нажатия кнопки "Отправить").
-* **Открыта/закрыта модалка** или выпадающий список (dropdown).
-* **Текущая выбранная вкладка** (Tab 1, Tab 2) внутри конкретного блока.
-* **Локальный статус загрузки (isLoading)** для мелкого компонента, если эти данные больше никому не нужны.
+- Redux Toolkit: https://redux-toolkit.js.org
+- Redux core: https://redux.js.org
+- React Redux: https://react-redux.js.org
