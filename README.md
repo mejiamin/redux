@@ -150,6 +150,99 @@ export type AppDispatch = typeof store.dispatch
 
 ---
 
+## Пример практического задания
+
+Покажу решение практического задания к уроку 3 — реализуем `themeSlice` с нуля.
+
+### 1. Slice `theme`
+
+```ts
+// src/features/theme/themeSlice.ts
+import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+
+export type ThemeMode = 'light' | 'dark'
+
+interface ThemeState {
+  mode: ThemeMode
+}
+
+const initialState: ThemeState = {
+  mode: 'light',
+}
+
+const themeSlice = createSlice({
+  name: 'theme',
+  initialState,
+  reducers: {
+    themeToggled(state) {
+      state.mode = state.mode === 'light' ? 'dark' : 'light'
+    },
+    themeSet(state, action: PayloadAction<ThemeMode>) {
+      state.mode = action.payload
+    },
+  },
+})
+
+export const { themeToggled, themeSet } = themeSlice.actions
+export default themeSlice.reducer
+```
+
+Разберём детали:
+
+- `themeToggled` не принимает `payload` — ему не нужны входные данные, вся логика («переключить на противоположное») выводится из текущего `state`.
+- `themeSet` принимает `PayloadAction<ThemeMode>` — то есть при вызове `themeSet('dark')` в `action.payload` попадёт именно `'dark'`, и TypeScript не даст передать туда, скажем, `'blue'`, потому что тип `ThemeMode` — это union из двух строк.
+- Экспортируем `ThemeMode` отдельно — он ещё пригодится в компоненте (урок 4), когда будем типизировать пропсы/условную стилизацию.
+
+### 2. Регистрация в store
+
+```ts
+// src/app/store.ts
+import { configureStore } from '@reduxjs/toolkit'
+import themeReducer from '../features/theme/themeSlice'
+
+export const store = configureStore({
+  reducer: {
+    theme: themeReducer,
+  },
+})
+
+export type RootState = ReturnType<typeof store.getState>
+export type AppDispatch = typeof store.dispatch
+```
+
+Если у вас уже есть `counter` из урока 3 (основной пример) — просто добавьте `theme` рядом:
+
+```ts
+export const store = configureStore({
+  reducer: {
+    counter: counterReducer,
+    theme: themeReducer,
+  },
+})
+```
+
+### 3. Проверка в Redux DevTools
+
+Поскольку UI мы ещё не подключали, «руками» подиспатчить action можно прямо из панели DevTools:
+
+1. Откройте вкладку **Redux** в DevTools браузера.
+2. В разделе **State** должно быть дерево:
+   ```json
+   {
+     "theme": { "mode": "light" }
+   }
+   ```
+3. Во вкладке **Dispatcher** (или похожей — зависит от версии расширения) можно вручную отправить action, например:
+   ```json
+   { "type": "theme/themeToggled" }
+   ```
+   После этого в **Diff**/**State** увидите, что `mode` стал `"dark"`.
+4. Попробуйте так же `{ "type": "theme/themeSet", "payload": "dark" }` — и убедитесь, что `mode` установился именно в переданное значение, а не переключился.
+
+Обратите внимание на формат типа action — `theme/themeToggled`: `theme` здесь взялся из `name: 'theme'` в `createSlice`, а `themeToggled` — из имени reducer-функции. Это и есть то самое автоматическое именование, о котором говорилось в теории: не нужно писать константы типов вручную, RTK собирает их сам из структуры slice.
+
+---
+
 ## Дополнительные ресурсы
 
 - Redux Toolkit: https://redux-toolkit.js.org
