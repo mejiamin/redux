@@ -23,8 +23,8 @@
 
 1. Урок 1. Зачем нужен Redux и как он устроен
 2. Урок 2. Установка и настройка Redux Toolkit
-3. **Урок 3. Первый slice: createSlice**
-4. Урок 4. Подключение компонентов: useSelector и useDispatch
+3. Урок 3. Первый slice: createSlice
+4. **Урок 4. Подключение компонентов: useSelector и useDispatch**
 5. Урок 5. Несколько слайсов и архитектура приложения
 6. Урок 6. Асинхронность: createAsyncThunk
 7. Урок 7. RTK Query: запросы к серверу
@@ -54,192 +54,135 @@ npm run dev
 
 ---
 
-## Урок 3. Первый slice: createSlice
+## Урок 4. Подключение компонентов: useSelector и useDispatch
 
-**Цель урока:** научиться создавать slice — связку из reducer'а и его actions — и подключать его к store.
+**Цель урока:** читать данные из store и отправлять actions из React-компонентов с полной типизацией.
 
 ### Теория
 
-В классическом Redux нужно было отдельно объявлять константы типов экшенов, action creators и reducer со `switch`. `createSlice` из RTK делает всё это одним вызовом:
+React Redux даёт два хука:
+
+- **`useSelector(selectorFn)`** — подписывает компонент на часть state. Компонент перерисуется только тогда, когда результат `selectorFn` изменился (сравнение по `===`).
+- **`useDispatch()`** — возвращает функцию `dispatch`, через которую отправляются actions.
+
+**Важный нюанс `useSelector`:** не возвращайте из селектора новый объект/массив на каждый вызов (`state => ({ a: state.a, b: state.b })`) — это будет считаться «изменением» на каждом рендере и вызовет лишние перерисовки. Либо выбирайте примитив/уже существующую ссылку, либо используйте мемоизированные селекторы (урок 8).
+
+**Типизация.** По умолчанию `useDispatch`/`useSelector` ничего не знают про ваши `RootState`/`AppDispatch`. Актуальный рекомендуемый способ — метод `.withTypes()`, добавленный в React Redux 9.1:
 
 ```ts
-createSlice({
-  // префикс для типов actions, например "counter/increment"
-  name: 'имя_слайса',
+// src/app/hooks.ts
+import { useDispatch, useSelector } from 'react-redux'
+import type { RootState, AppDispatch } from './store'
 
-  // начальное состояние
-  initialState: ...,
-
-  // reducer-функции = одновременно и action creators
-  reducers: {
-    actionName(state, action) { ... }
-  },
-})
+export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
+export const useAppSelector = useSelector.withTypes<RootState>()
 ```
 
-`createSlice` возвращает объект с готовыми `actions` (action creators, которые можно диспатчить) и `reducer` (готовая reducer-функция для store).
+Эти типизированные хуки кладутся в отдельный файл (не в `store.ts`, чтобы избежать циклических импортов) и используются вместо обычных `useDispatch`/`useSelector` везде в приложении.
 
-**Главная «магия» — Immer.** Внутри `reducers` можно писать код так, будто вы напрямую мутируете `state` (`state.value += 1`, `state.items.push(item)`) — Immer под капотом отслеживает эти «мутации» и производит из них настоящий immutable-апдейт. Реальный state в store остаётся неизменяемым, вы просто избавлены от ручных spread-операторов.
+### Код: компонент счётчика
 
-Исключение: если reducer **возвращает** новое значение явно (`return newState`), то новым state становится именно оно — мутировать `state` в этом случае уже нельзя (либо мутируем, либо возвращаем, не одновременно).
+```tsx
+// src/features/counter/Counter.tsx
+import { useAppDispatch, useAppSelector } from '../../app/hooks'
+import { incremented, decremented, incrementedByAmount } from './counterSlice'
+import styles from './Counter.module.css'
 
-### Код: slice счётчика
+export function Counter() {
+  const count = useAppSelector((state) => state.counter.value)
+  const dispatch = useAppDispatch()
 
-```ts
-// src/features/counter/counterSlice.ts
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
-
-interface CounterState {
-  value: number
+  return (
+    <div className={styles.wrapper}>
+      <button 
+        className={styles.button} 
+        onClick={() => dispatch(decremented())}
+      >
+        −
+      </button>
+      <span className={styles.value}>{count}</span>
+      <button 
+        className={styles.button} 
+        onClick={() => dispatch(incremented())}
+      >
+        +
+      </button>
+      <button 
+        className={styles.button} 
+        onClick={() => dispatch(incrementedByAmount(5))}
+      >
+        +5
+      </button>
+    </div>
+  )
 }
-
-const initialState: CounterState = {
-  value: 0,
-}
-
-const counterSlice = createSlice({
-  name: 'counter',
-  initialState,
-  reducers: {
-    incremented(state) {
-      state.value += 1 // выглядит как мутация, но безопасно благодаря Immer
-    },
-    decremented(state) {
-      state.value -= 1
-    },
-    incrementedByAmount(state, action: PayloadAction<number>) {
-      state.value += action.payload
-    },
-  },
-})
-
-export const { 
-  incremented, 
-  decremented, 
-  incrementedByAmount 
-} = counterSlice.actions
-export default counterSlice.reducer
 ```
-
-Регистрируем reducer в store:
-
-```ts
-// src/app/store.ts
-import { configureStore } from '@reduxjs/toolkit'
-import counterReducer from '../features/counter/counterSlice'
-
-export const store = configureStore({
-  reducer: {
-    counter: counterReducer,
-  },
-})
-
-export type RootState = ReturnType<typeof store.getState>
-export type AppDispatch = typeof store.dispatch
-```
-
-Теперь `state.counter.value` доступен из любого компонента приложения.
 
 ### Практическое задание
 
-Создайте свой slice (без подключения к UI — это будет в уроке 4):
-
-1. Slice `theme` с состоянием `{ mode: 'light' | 'dark' }` и actions `themeToggled` (переключает mode) и `themeSet` (принимает `'light' | 'dark'` через `payload`).
-2. Зарегистрируйте `theme`-reducer в `store.ts`.
-3. Откройте Redux DevTools — в дереве state должна появиться ветка `theme: { mode: 'light' }`.
+1. Создайте `src/app/hooks.ts` с типизированными `useAppDispatch`/`useAppSelector` по примеру выше.
+2. Постройте компонент `ThemeToggle` для slice `theme` из урока 3: кнопка показывает текущий `mode` и по клику диспатчит `themeToggled`.
+3. Стилизуйте `ThemeToggle` через CSS Modules — пусть фон кнопки меняется в зависимости от `mode` (например, через условный класс: `className={mode === 'dark' ? styles.dark : styles.light}`).
+4. Проверьте в Redux DevTools, что клики действительно диспатчат `theme/themeToggled`.
 
 ---
 
 ## Пример практического задания
 
-Покажу решение практического задания к уроку 3 — реализуем `themeSlice` с нуля.
+Покажу решение практического задания к уроку 4 — подключаем `theme`-slice к реальному UI.
 
-### 1. Slice `theme`
+### 1. Типизированные хуки
 
 ```ts
-// src/features/theme/themeSlice.ts
-import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
+// src/app/hooks.ts
+import { useDispatch, useSelector } from 'react-redux'
+import type { RootState, AppDispatch } from './store'
 
-export type ThemeMode = 'light' | 'dark'
+export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
+export const useAppSelector = useSelector.withTypes<RootState>()
+```
 
-interface ThemeState {
-  mode: ThemeMode
+Эти два хука — просто «предварительно настроенные» версии `useDispatch`/`useSelector`. Теперь TypeScript будет знать форму всего state и форму dispatch-функции без ручного указания типов в каждом компоненте.
+
+### 2. Компонент ThemeToggle
+
+```tsx
+// src/features/theme/ThemeToggle.tsx
+import { useAppDispatch, useAppSelector } from '../../app/hooks'
+import { themeToggled } from './themeSlice'
+import styles from './ThemeToggle.module.css'
+
+export function ThemeToggle() {
+  const mode = useAppSelector((state) => state.theme.mode)
+  const dispatch = useAppDispatch()
+
+  return (
+    <button
+      className={mode === 'dark' ? styles.dark : styles.light}
+      onClick={() => dispatch(themeToggled())}
+    >
+      Текущая тема: {mode === 'dark' ? 'Тёмная' : 'Светлая'}
+    </button>
+  )
 }
-
-const initialState: ThemeState = {
-  mode: 'light',
-}
-
-const themeSlice = createSlice({
-  name: 'theme',
-  initialState,
-  reducers: {
-    themeToggled(state) {
-      state.mode = state.mode === 'light' ? 'dark' : 'light'
-    },
-    themeSet(state, action: PayloadAction<ThemeMode>) {
-      state.mode = action.payload
-    },
-  },
-})
-
-export const { themeToggled, themeSet } = themeSlice.actions
-export default themeSlice.reducer
 ```
 
-Разберём детали:
+Разберём, что здесь происходит:
 
-- `themeToggled` не принимает `payload` — ему не нужны входные данные, вся логика («переключить на противоположное») выводится из текущего `state`.
-- `themeSet` принимает `PayloadAction<ThemeMode>` — то есть при вызове `themeSet('dark')` в `action.payload` попадёт именно `'dark'`, и TypeScript не даст передать туда, скажем, `'blue'`, потому что тип `ThemeMode` — это union из двух строк.
-- Экспортируем `ThemeMode` отдельно — он ещё пригодится в компоненте (урок 4), когда будем типизировать пропсы/условную стилизацию.
-
-### 2. Регистрация в store
-
-```ts
-// src/app/store.ts
-import { configureStore } from '@reduxjs/toolkit'
-import themeReducer from '../features/theme/themeSlice'
-
-export const store = configureStore({
-  reducer: {
-    theme: themeReducer,
-  },
-})
-
-export type RootState = ReturnType<typeof store.getState>
-export type AppDispatch = typeof store.dispatch
-```
-
-Если у вас уже есть `counter` из урока 3 (основной пример) — просто добавьте `theme` рядом:
-
-```ts
-export const store = configureStore({
-  reducer: {
-    counter: counterReducer,
-    theme: themeReducer,
-  },
-})
-```
+- `useAppSelector((state) => state.theme.mode)` — читаем только нужное значение, не весь `state.theme`. Так компонент перерисуется только при изменении именно `mode`.
+- `dispatch(themeToggled())` — вызываем action creator без аргументов (напомню, `themeToggled` не принимает payload), результат — объект `{ type: 'theme/themeToggled' }`, который уходит в store.
+- Класс кнопки выбирается условно прямо в JSX — простой и читаемый способ для двух вариантов; если состояний станет больше трёх, обычно переходят на `classnames`/`clsx` библиотеку, но для двух значений это избыточно.
 
 ### 3. Проверка в Redux DevTools
 
-Поскольку UI мы ещё не подключали, «руками» подиспатчить action можно прямо из панели DevTools:
+1. Подключите `<ThemeToggle />` куда-нибудь в `App.tsx`, чтобы она реально рендерилась.
+2. Откройте вкладку **Redux** в DevTools браузера.
+3. Кликните по кнопке несколько раз.
+4. В **Action log** должна появляться последовательность записей `theme/themeToggled` — по одной на каждый клик.
+5. Кликните на любую из записей → во вкладке **Diff** увидите, как `mode` переключался между `"light"` и `"dark"` на каждом шаге.
+6. Попробуйте **time-travel**: перетащите ползунок истории на несколько шагов назад — кнопка в UI должна визуально «вернуться» к прошлому состоянию (другой цвет фона, другой текст).
 
-1. Откройте вкладку **Redux** в DevTools браузера.
-2. В разделе **State** должно быть дерево:
-   ```json
-   {
-     "theme": { "mode": "light" }
-   }
-   ```
-3. Во вкладке **Dispatcher** (или похожей — зависит от версии расширения) можно вручную отправить action, например:
-   ```json
-   { "type": "theme/themeToggled" }
-   ```
-   После этого в **Diff**/**State** увидите, что `mode` стал `"dark"`.
-4. Попробуйте так же `{ "type": "theme/themeSet", "payload": "dark" }` — и убедитесь, что `mode` установился именно в переданное значение, а не переключился.
-
-Обратите внимание на формат типа action — `theme/themeToggled`: `theme` здесь взялся из `name: 'theme'` в `createSlice`, а `themeToggled` — из имени reducer-функции. Это и есть то самое автоматическое именование, о котором говорилось в теории: не нужно писать константы типов вручную, RTK собирает их сам из структуры slice.
+Если в логе вместо `theme/themeToggled` видите что-то другое (например, action вообще не появляется) — проверьте: `<Provider store={store}>` действительно оборачивает `App`, и `themeReducer` зарегистрирован в `store.ts` под ключом `theme` (иначе `state.theme` будет `undefined`, и селектор упадёт с ошибкой при обращении к `.mode`).
 
 ---
 

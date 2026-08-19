@@ -1,0 +1,23 @@
+.wrapper {
+  height: 50vh;
+  
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.button {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #d0d0d0;
+  background: #fff;
+  cursor: pointer;
+}
+
+.value {
+  min-width: 32px;
+  text-align: center;
+  font-weight: 600;
+}

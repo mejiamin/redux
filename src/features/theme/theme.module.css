@@ -1,0 +1,32 @@
+.light,
+.dark {
+  margin-inline: auto;
+  display: flex;
+  
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.light {
+  background-color: #f5f5f5;
+  color: #1a1a1a;
+  border-color: #d0d0d0;
+}
+
+.light:hover {
+  background-color: #ebebeb;
+}
+
+.dark {
+  background-color: #1a1a1a;
+  color: #f5f5f5;
+  border-color: #3a3a3a;
+}
+
+.dark:hover {
+  background-color: #2a2a2a;
+}

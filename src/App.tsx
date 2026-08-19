@@ -1,7 +1,10 @@
+import { Counter, Theme } from "./features"
+
 export const App = () => {
   return (
     <div className='App'>
-      App
+      <Counter />
+      <Theme />
     </div>
   )
 }
