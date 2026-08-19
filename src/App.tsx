@@ -1,10 +1,9 @@
-import { Counter, Theme } from "./features"
+import { TodoList } from "./features"
 
 export const App = () => {
   return (
     <div className='App'>
-      <Counter />
-      <Theme />
+      <TodoList />
     </div>
   )
 }

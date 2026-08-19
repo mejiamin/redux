@@ -24,8 +24,8 @@
 1. Урок 1. Зачем нужен Redux и как он устроен
 2. Урок 2. Установка и настройка Redux Toolkit
 3. Урок 3. Первый slice: createSlice
-4. **Урок 4. Подключение компонентов: useSelector и useDispatch**
-5. Урок 5. Несколько слайсов и архитектура приложения
+4. Урок 4. Подключение компонентов: useSelector и useDispatch
+5. **Урок 5. Несколько слайсов и архитектура приложения**
 6. Урок 6. Асинхронность: createAsyncThunk
 7. Урок 7. RTK Query: запросы к серверу
 8. Урок 8. Селекторы и производительность: createSelector
@@ -54,135 +54,201 @@ npm run dev
 
 ---
 
-## Урок 4. Подключение компонентов: useSelector и useDispatch
+## Урок 5. Несколько слайсов и архитектура приложения
 
-**Цель урока:** читать данные из store и отправлять actions из React-компонентов с полной типизацией.
+**Цель урока:** научиться организовывать несколько слайсов вместе и понять, когда состояние должно жить в Redux, а когда — оставаться локальным.
 
 ### Теория
 
-React Redux даёт два хука:
-
-- **`useSelector(selectorFn)`** — подписывает компонент на часть state. Компонент перерисуется только тогда, когда результат `selectorFn` изменился (сравнение по `===`).
-- **`useDispatch()`** — возвращает функцию `dispatch`, через которую отправляются actions.
-
-**Важный нюанс `useSelector`:** не возвращайте из селектора новый объект/массив на каждый вызов (`state => ({ a: state.a, b: state.b })`) — это будет считаться «изменением» на каждом рендере и вызовет лишние перерисовки. Либо выбирайте примитив/уже существующую ссылку, либо используйте мемоизированные селекторы (урок 8).
-
-**Типизация.** По умолчанию `useDispatch`/`useSelector` ничего не знают про ваши `RootState`/`AppDispatch`. Актуальный рекомендуемый способ — метод `.withTypes()`, добавленный в React Redux 9.1:
+В реальном приложении слайсов много — каждая фича (корзина, пользователь, фильтры, todos) обычно получает свой slice. `configureStore` принимает объект `reducer`, где ключ — это имя в дереве state, а значение — reducer соответствующего slice:
 
 ```ts
-// src/app/hooks.ts
-import { useDispatch, useSelector } from 'react-redux'
-import type { RootState, AppDispatch } from './store'
-
-export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
-export const useAppSelector = useSelector.withTypes<RootState>()
+configureStore({
+  reducer: {
+    counter: counterReducer,
+    theme: themeReducer,
+    todos: todosReducer,
+  },
+})
 ```
 
-Эти типизированные хуки кладутся в отдельный файл (не в `store.ts`, чтобы избежать циклических импортов) и используются вместо обычных `useDispatch`/`useSelector` везде в приложении.
+Под капотом это делает то же самое, что `combineReducers` в классическом Redux — итоговый state выглядит как `{ counter: {...}, theme: {...}, todos: {...} }`.
 
-### Код: компонент счётчика
+**Эвристика «Redux или useState»:**
 
-```tsx
-// src/features/counter/Counter.tsx
-import { useAppDispatch, useAppSelector } from '../../app/hooks'
-import { incremented, decremented, incrementedByAmount } from './counterSlice'
-import styles from './Counter.module.css'
+| Признак | useState | Redux |
+|---|---|---|
+| Нужен только одному компоненту | ✅ | |
+| Нужен нескольким несвязанным компонентам | | ✅ |
+| Простое значение (toggle, поле ввода) | ✅ | |
+| Сложная логика обновления, важна история изменений | | ✅ |
+| Должно переживать размонтирование компонента | | ✅ |
+| Нужна отладка через time-travel | | ✅ |
 
-export function Counter() {
-  const count = useAppSelector((state) => state.counter.value)
-  const dispatch = useAppDispatch()
+Не нужно «тащить в Redux всё подряд» — локальный `useState` для состояния открытой модалки или значения поля поиска внутри одного компонента — это нормально и даже предпочтительно (меньше boilerplate, меньше лишних рендеров всего приложения).
 
-  return (
-    <div className={styles.wrapper}>
-      <button 
-        className={styles.button} 
-        onClick={() => dispatch(decremented())}
-      >
-        −
-      </button>
-      <span className={styles.value}>{count}</span>
-      <button 
-        className={styles.button} 
-        onClick={() => dispatch(incremented())}
-      >
-        +
-      </button>
-      <button 
-        className={styles.button} 
-        onClick={() => dispatch(incrementedByAmount(5))}
-      >
-        +5
-      </button>
-    </div>
-  )
+### Код: slice списка задач (todos)
+
+```ts
+// src/features/todos/todosSlice.ts
+import { createSlice, nanoid, type PayloadAction } from '@reduxjs/toolkit'
+
+export interface Todo {
+  id: string
+  text: string
+  completed: boolean
 }
+
+type TodosState = Todo[]
+
+const initialState: TodosState = []
+
+const todosSlice = createSlice({
+  name: 'todos',
+  initialState,
+  reducers: {
+    todoAdded: {
+      reducer(state, action: PayloadAction<Todo>) {
+        state.push(action.payload)
+      },
+      // prepare-колбэк формирует payload до того, как он попадёт в reducer
+      prepare(text: string) {
+        return { payload: { id: nanoid(), text, completed: false } }
+      },
+    },
+    todoToggled(state, action: PayloadAction<string>) {
+      const todo = state.find((t) => t.id === action.payload)
+      if (todo) todo.completed = !todo.completed
+    },
+    todoRemoved(state, action: PayloadAction<string>) {
+      return state.filter((t) => t.id !== action.payload)
+    },
+  },
+})
+
+export const { todoAdded, todoToggled, todoRemoved } = todosSlice.actions
+export default todosSlice.reducer
 ```
+
+```ts
+// src/app/store.ts
+import { configureStore } from '@reduxjs/toolkit'
+import counterReducer from '../features/counter/counterSlice'
+import themeReducer from '../features/theme/themeSlice'
+import todosReducer from '../features/todos/todosSlice'
+
+export const store = configureStore({
+  reducer: {
+    counter: counterReducer,
+    theme: themeReducer,
+    todos: todosReducer,
+  },
+})
+
+export type RootState = ReturnType<typeof store.getState>
+export type AppDispatch = typeof store.dispatch
+```
+
+Обратите внимание на `prepare`-колбэк в `todoAdded` — он позволяет принимать «сырые» аргументы (просто `text: string`), а уже внутри генерировать `id` и собирать полноценный объект `payload`. Удобный приём, когда action creator должен принимать не то же самое, что лежит в payload.
 
 ### Практическое задание
 
-1. Создайте `src/app/hooks.ts` с типизированными `useAppDispatch`/`useAppSelector` по примеру выше.
-2. Постройте компонент `ThemeToggle` для slice `theme` из урока 3: кнопка показывает текущий `mode` и по клику диспатчит `themeToggled`.
-3. Стилизуйте `ThemeToggle` через CSS Modules — пусть фон кнопки меняется в зависимости от `mode` (например, через условный класс: `className={mode === 'dark' ? styles.dark : styles.light}`).
-4. Проверьте в Redux DevTools, что клики действительно диспатчат `theme/themeToggled`.
+1. Постройте компонент `TodoList`: поле ввода + кнопка «Добавить», список задач с чекбоксом (toggle) и кнопкой удаления.
+2. Используйте `todoAdded`, `todoToggled`, `todoRemoved` через `useAppDispatch`.
+3. Заведите CSS Modules для списка: зачёркнутый текст для выполненных задач (`text-decoration: line-through`).
+4. Подумайте и запишите: какая часть UI здесь могла бы остаться на `useState` вместо Redux (например, значение поля ввода до нажатия «Добавить»)? Сделайте именно так.
 
 ---
 
 ## Пример практического задания
 
-Покажу решение практического задания к уроку 4 — подключаем `theme`-slice к реальному UI.
+Покажу решение практического задания к уроку 5 — компонент `TodoList` поверх `todosSlice` из теории урока.
 
-### 1. Типизированные хуки
-
-```ts
-// src/app/hooks.ts
-import { useDispatch, useSelector } from 'react-redux'
-import type { RootState, AppDispatch } from './store'
-
-export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
-export const useAppSelector = useSelector.withTypes<RootState>()
-```
-
-Эти два хука — просто «предварительно настроенные» версии `useDispatch`/`useSelector`. Теперь TypeScript будет знать форму всего state и форму dispatch-функции без ручного указания типов в каждом компоненте.
-
-### 2. Компонент ThemeToggle
+### 1–2. Компонент TodoList
 
 ```tsx
-// src/features/theme/ThemeToggle.tsx
+// src/features/todos/TodoList.tsx
+import { useState } from 'react'
 import { useAppDispatch, useAppSelector } from '../../app/hooks'
-import { themeToggled } from './themeSlice'
-import styles from './ThemeToggle.module.css'
+import { todoAdded, todoToggled, todoRemoved } from './todosSlice'
+import styles from './TodoList.module.css'
 
-export function ThemeToggle() {
-  const mode = useAppSelector((state) => state.theme.mode)
+export function TodoList() {
+  // локальное состояние поля ввода — см. пункт 4
+  const [text, setText] = useState('')
+
+  const todos = useAppSelector((state) => state.todos)
   const dispatch = useAppDispatch()
 
+  function handleAdd() {
+    const trimmed = text.trim()
+    if (!trimmed) return // не добавляем пустые задачи
+
+    dispatch(todoAdded(trimmed))
+    setText('') // очищаем поле после добавления
+  }
+
   return (
-    <button
-      className={mode === 'dark' ? styles.dark : styles.light}
-      onClick={() => dispatch(themeToggled())}
-    >
-      Текущая тема: {mode === 'dark' ? 'Тёмная' : 'Светлая'}
-    </button>
+    <div className={styles.wrapper}>
+      <div className={styles.inputRow}>
+        <input
+          className={styles.input}
+          type="text"
+          value={text}
+          placeholder="Что нужно сделать?"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+        />
+        <button className={styles.addButton} onClick={handleAdd}>
+          Добавить
+        </button>
+      </div>
+
+      <ul className={styles.list}>
+        {todos.map((todo) => (
+          <li key={todo.id} className={styles.item}>
+            <label className={styles.label}>
+              <input
+                type="checkbox"
+                checked={todo.completed}
+                onChange={() => dispatch(todoToggled(todo.id))}
+              />
+              <span className={todo.completed ? styles.completed : undefined}>
+                {todo.text}
+              </span>
+            </label>
+            <button
+              className={styles.removeButton}
+              onClick={() => dispatch(todoRemoved(todo.id))}
+              aria-label="Удалить задачу"
+            >
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {todos.length === 0 && <p className={styles.empty}>Задач пока нет</p>}
+    </div>
   )
 }
 ```
 
-Разберём, что здесь происходит:
+Пара моментов, на которые стоит обратить внимание:
 
-- `useAppSelector((state) => state.theme.mode)` — читаем только нужное значение, не весь `state.theme`. Так компонент перерисуется только при изменении именно `mode`.
-- `dispatch(themeToggled())` — вызываем action creator без аргументов (напомню, `themeToggled` не принимает payload), результат — объект `{ type: 'theme/themeToggled' }`, который уходит в store.
-- Класс кнопки выбирается условно прямо в JSX — простой и читаемый способ для двух вариантов; если состояний станет больше трёх, обычно переходят на `classnames`/`clsx` библиотеку, но для двух значений это избыточно.
+- `dispatch(todoAdded(trimmed))` — напомню, что в `todosSlice` у `todoAdded` есть `prepare`-колбэк (урок 5, теория), поэтому мы передаём просто строку `trimmed`, а не готовый объект `{ id, text, completed }` — `id` и `completed: false` генерируются автоматически внутри slice.
+- `onKeyDown` с проверкой на `Enter` — небольшое улучшение UX, чтобы не заставлять пользователя обязательно кликать мышью по кнопке.
+- Пустая проверка `if (!trimmed) return` — предохраняет store от мусорных пустых задач; такую валидацию логично держать в компоненте, а не в reducer'е (reducer не должен «отказываться» выполнять action — это должно решаться до dispatch).
 
-### 3. Проверка в Redux DevTools
+### 3. Что осталось на useState
 
-1. Подключите `<ThemeToggle />` куда-нибудь в `App.tsx`, чтобы она реально рендерилась.
-2. Откройте вкладку **Redux** в DevTools браузера.
-3. Кликните по кнопке несколько раз.
-4. В **Action log** должна появляться последовательность записей `theme/themeToggled` — по одной на каждый клик.
-5. Кликните на любую из записей → во вкладке **Diff** увидите, как `mode` переключался между `"light"` и `"dark"` на каждом шаге.
-6. Попробуйте **time-travel**: перетащите ползунок истории на несколько шагов назад — кнопка в UI должна визуально «вернуться» к прошлому состоянию (другой цвет фона, другой текст).
+В коде выше уже сделано правильно: **значение поля ввода (`text`) живёт в локальном `useState`**, а не в Redux. Объясню почему:
 
-Если в логе вместо `theme/themeToggled` видите что-то другое (например, action вообще не появляется) — проверьте: `<Provider store={store}>` действительно оборачивает `App`, и `themeReducer` зарегистрирован в `store.ts` под ключом `theme` (иначе `state.theme` будет `undefined`, и селектор упадёт с ошибкой при обращении к `.mode`).
+- Оно нужно **только этому одному компоненту** — ни шапка сайта, ни другая часть приложения не должны знать, что пользователь сейчас печатает в поле.
+- Оно **временное и одноразовое** — как только задача добавлена, значение сбрасывается и не имеет смысла как часть «истории приложения» (в отличие от `todos`, которые как раз стоит помнить и, например, видеть в time-travel Redux DevTools).
+- Хранение в Redux означало бы, что **каждое нажатие клавиши** диспатчит action и проходит через store — лишняя нагрузка и мусор в Action log DevTools (представьте лог из сотен `input/charTyped` вместо осмысленных `todos/todoAdded`).
+
+Правило по аналогии с уроком 1: если состояние не нужно за пределами компонента и не должно переживать его собственную жизнь — это кандидат на `useState`, а не на Redux. Здесь `text` — учебный пример именно такого состояния.
 
 ---
 
