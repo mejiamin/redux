@@ -1,4 +1,5 @@
-import { counterReducer, themeReducer } from "@/features";
+import counterReducer from "../features/counter/counterSlice";
+import themeReducer from "../features/theme/themeSlice";
 import { configureStore } from "@reduxjs/toolkit";
 
 export const store = configureStore({
