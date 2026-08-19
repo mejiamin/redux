@@ -21,10 +21,10 @@
 
 ## Содержание
 
-1. **Урок 1. Зачем нужен Redux и как он устроен**
+1. Урок 1. Зачем нужен Redux и как он устроен
 2. Урок 2. Установка и настройка Redux Toolkit
 3. Урок 3. Первый slice: createSlice
-4. Урок 4. Подключение компонентов: useSelector и useDispatch
+4. **Урок 4. Подключение компонентов: useSelector и useDispatch**
 5. Урок 5. Несколько слайсов и архитектура приложения
 6. Урок 6. Асинхронность: createAsyncThunk
 7. Урок 7. RTK Query: запросы к серверу
@@ -38,263 +38,156 @@
 - В своём проекте (React+Vite+TS+CSS Modules уже установлены) выполняйте практическое задание после каждого урока.
 - Не переходите к асинхронности (урок 6) и RTK Query (урок 7), пока не освоились со слайсами и хуками (уроки 3–4) — это фундамент.
 
+## Быстрый старт
+
+### Установка зависимостей
+
+```bash
+npm install
+```
+
+### Запуск в режиме разработки
+
+```bash
+npm run dev
+```
+
 ---
 
-## Урок 1. Зачем нужен Redux и как он устроен
+## Урок 4. Подключение компонентов: useSelector и useDispatch
 
-**Цель урока:** понять, какую проблему решает Redux, и разобраться с базовыми понятиями: store, action, reducer, dispatch.
+**Цель урока:** читать данные из store и отправлять actions из React-компонентов с полной типизацией.
 
 ### Теория
 
-Когда приложение растёт, состояние (state) нужно расшаривать между компонентами, далёкими друг от друга в дереве. На чистом React это решается либо «prop drilling» (прокидыванием пропсов через много промежуточных компонентов), либо Context API. Оба подхода работают, но:
+React Redux даёт два хука:
 
-- prop drilling быстро превращается в кашу при глубокой вложенности;
-- Context неудобен при частых обновлениях — он перерисовывает всех потребителей контекста сразу.
+- **`useSelector(selectorFn)`** — подписывает компонент на часть state. Компонент перерисуется только тогда, когда результат `selectorFn` изменился (сравнение по `===`).
+- **`useDispatch()`** — возвращает функцию `dispatch`, через которую отправляются actions.
 
-Redux предлагает другой подход: **всё важное состояние приложения хранится в одном объекте — store**, а изменять его можно только по строгим правилам.
+**Важный нюанс `useSelector`:** не возвращайте из селектора новый объект/массив на каждый вызов (`state => ({ a: state.a, b: state.b })`) — это будет считаться «изменением» на каждом рендере и вызовет лишние перерисовки. Либо выбирайте примитив/уже существующую ссылку, либо используйте мемоизированные селекторы (урок 8).
 
-Три кита Redux:
-
-1. **Store** — единственный источник правды (single source of truth). Всё состояние приложения лежит в одном объекте.
-2. **Action** — обычный JS-объект с полем `type`, описывающий, *что произошло* (например, `{ type: 'cart/itemAdded', payload: { id: 1 } }`). Action не содержит логику — только данные о событии.
-3. **Reducer** — чистая функция `(state, action) => newState`. Получает текущее состояние и action, возвращает новое состояние. Reducer никогда не мутирует state напрямую и не делает побочных эффектов (запросы, таймеры и т.д.).
-
-Поток данных всегда односторонний:
-
-```
-UI-компонент 
-→ dispatch(action) 
-→ reducer вычисляет новый state 
-→ store обновляется 
-→ подписанные компоненты перерисовываются
-```
-
-Это называется **unidirectional data flow** — данные текут в одну сторону, что делает поведение приложения предсказуемым: для любого состояния всегда можно сказать, какая последовательность actions к нему привела.
-
-**Важно:** в этом курсе мы сразу используем **Redux Toolkit (RTK)** — официальный современный способ писать Redux-логику. «Классический» Redux (ручные `switch`, константы типов экшенов, immutable-апдейты вручную) сегодня в новых проектах не используется — RTK берёт всю эту рутину на себя.
-
-### Когда нужен Redux, а когда — нет
-
-- **Local state (`useState`)** — состояние, нужное только одному компоненту (открыт ли dropdown, значение поля ввода).
-- **Context API** — состояние, которое редко меняется и нужно многим компонентам (тема оформления, текущий язык).
-- **Redux** — состояние, расшаренное между многими несвязанными частями приложения, часто меняющееся, требующее сложной логики обновления или удобной отладки через DevTools (история действий, time-travel).
-
-### Пример (концептуальный, без React)
-
-Чтобы увидеть идею в чистом виде — мини-пример на базовом Redux API (без Toolkit), просто чтобы «пощупать» концепцию:
+**Типизация.** По умолчанию `useDispatch`/`useSelector` ничего не знают про ваши `RootState`/`AppDispatch`. Актуальный рекомендуемый способ — метод `.withTypes()`, добавленный в React Redux 9.1:
 
 ```ts
-import { createStore } from 'redux'
+// src/app/hooks.ts
+import { useDispatch, useSelector } from 'react-redux'
+import type { RootState, AppDispatch } from './store'
 
-type CounterState = { value: number }
-type CounterAction = { type: 'increment' } | { type: 'decrement' }
-
-function counterReducer(
-  state: CounterState = { value: 0 },
-  action: CounterAction,
-): CounterState {
-  switch (action.type) {
-    case 'increment':
-      return { value: state.value + 1 }
-    case 'decrement':
-      return { value: state.value - 1 }
-    default:
-      return state
-  }
-}
-
-const store = createStore(counterReducer)
-
-store.subscribe(() => console.log(store.getState()))
-
-store.dispatch({ type: 'increment' }) // { value: 1 }
-store.dispatch({ type: 'increment' }) // { value: 2 }
-store.dispatch({ type: 'decrement' }) // { value: 1 }
+export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
+export const useAppSelector = useSelector.withTypes<RootState>()
 ```
 
-Обратите внимание на ручную работу: `switch`, immutable-апдейт (`{ value: state.value + 1 }`, а не `state.value++`), типы actions вручную. Начиная со следующего урока мы заменим всё это на Redux Toolkit, где тот же счётчик пишется в разы короче.
+Эти типизированные хуки кладутся в отдельный файл (не в `store.ts`, чтобы избежать циклических импортов) и используются вместо обычных `useDispatch`/`useSelector` везде в приложении.
+
+### Код: компонент счётчика
+
+```tsx
+// src/features/counter/Counter.tsx
+import { useAppDispatch, useAppSelector } from '../../app/hooks'
+import { incremented, decremented, incrementedByAmount } from './counterSlice'
+import styles from './Counter.module.css'
+
+export function Counter() {
+  const count = useAppSelector((state) => state.counter.value)
+  const dispatch = useAppDispatch()
+
+  return (
+    <div className={styles.wrapper}>
+      <button 
+        className={styles.button} 
+        onClick={() => dispatch(decremented())}
+      >
+        −
+      </button>
+      <span className={styles.value}>{count}</span>
+      <button 
+        className={styles.button} 
+        onClick={() => dispatch(incremented())}
+      >
+        +
+      </button>
+      <button 
+        className={styles.button} 
+        onClick={() => dispatch(incrementedByAmount(5))}
+      >
+        +5
+      </button>
+    </div>
+  )
+}
+```
 
 ### Практическое задание
 
-Без кода — на бумаге или в заметках:
-
-1. Опишите для интернет-магазина (корзина товаров), какие actions понадобятся (например, `cart/itemAdded`, `cart/itemRemoved`, `cart/cleared`). Для каждого — какие данные должны лежать в `payload`.
-2. Опишите путь данных: что происходит от клика по кнопке «Добавить в корзину» до обновления счётчика товаров в шапке сайта.
-3. Подумайте: какая часть состояния вашего текущего/будущего проекта точно должна жить в Redux, а какая — остаться в `useState`?
+1. Создайте `src/app/hooks.ts` с типизированными `useAppDispatch`/`useAppSelector` по примеру выше.
+2. Постройте компонент `ThemeToggle` для slice `theme` из урока 3: кнопка показывает текущий `mode` и по клику диспатчит `themeToggled`.
+3. Стилизуйте `ThemeToggle` через CSS Modules — пусть фон кнопки меняется в зависимости от `mode` (например, через условный класс: `className={mode === 'dark' ? styles.dark : styles.light}`).
+4. Проверьте в Redux DevTools, что клики действительно диспатчат `theme/themeToggled`.
 
 ---
 
 ## Пример практического задания
 
-### 1. Actions и Payload (Корзина товаров)
+Покажу решение практического задания к уроку 4 — подключаем `theme`-slice к реальному UI.
 
-В чистом Redux для каждого экшена мы описываем его тип и структуру полезной нагрузки (`payload`). Вот как это выглядит в коде:
+### 1. Типизированные хуки
 
-```typescript
-// Описываем типы данных
-type CartItem = {
-  id: string
-  name: string
-  price: number
-  quantity: number
-}
+```ts
+// src/app/hooks.ts
+import { useDispatch, useSelector } from 'react-redux'
+import type { RootState, AppDispatch } from './store'
 
-type CartState = {
-  items: CartItem[]
-  totalAmount: number
-}
-
-// Описываем Actions и их payload
-type AddItemAction = {
-  type: 'cart/itemAdded'
-  payload: Omit<CartItem, 'quantity'> // Передаем данные товара, 
-                                      // количество изначально 1
-}
-
-type RemoveItemAction = {
-  type: 'cart/itemRemoved'
-  payload: string // Передаем только id товара, который нужно удалить
-}
-
-type ChangeQuantityAction = {
-  type: 'cart/quantityChanged'
-  payload: { id: string; quantity: number } // id товара и 
-                                            // его новое количество
-}
-
-type ClearCartAction = {
-  type: 'cart/cleared'
-  // payload не нужен, так как мы просто очищаем всё состояние
-}
-
-type CartAction = AddItemAction 
-  | RemoveItemAction 
-  | ChangeQuantityAction 
-  | ClearCartAction
+export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
+export const useAppSelector = useSelector.withTypes<RootState>()
 ```
 
-### 2. Путь данных (Data Flow) в коде
+Эти два хука — просто «предварительно настроенные» версии `useDispatch`/`useSelector`. Теперь TypeScript будет знать форму всего state и форму dispatch-функции без ручного указания типов в каждом компоненте.
 
-Давай создадим `cartReducer` и сымитируем тот самый путь от клика по кнопке до обновления счетчика.
+### 2. Компонент ThemeToggle
 
-Помни про **главное правило: никаких `state.items.push()`**, только создание новых объектов и массивов (immutability).
+```tsx
+// src/features/theme/ThemeToggle.tsx
+import { useAppDispatch, useAppSelector } from '../../app/hooks'
+import { themeToggled } from './themeSlice'
+import styles from './ThemeToggle.module.css'
 
-```typescript
-import { createStore } from 'redux'
+export function ThemeToggle() {
+  const mode = useAppSelector((state) => state.theme.mode)
+  const dispatch = useAppDispatch()
 
-const initialState: CartState = {
-  items: [],
-  totalAmount: 0
-}
-
-function cartReducer(
-  state: CartState = initialState, 
-  action: CartAction
-): CartState {
-  switch (action.type) {
-    case 'cart/itemAdded': {
-      const existingItem = 
-        state.items.find(item => item.id === action.payload.id)
-      
-      let newItems: CartItem[]
-      
-      if (existingItem) {
-        // Если товар уже есть, увеличиваем количество
-        newItems = state.items.map(item => 
-          item.id === action.payload.id 
-            ? { ...item, quantity: item.quantity + 1 } 
-            : item
-        )
-      } else {
-        // Если товара нет, добавляем его со стартовым quantity: 1
-        newItems = [...state.items, { ...action.payload, quantity: 1 }]
-      }
-      
-      return {
-        items: newItems,
-        totalAmount: newItems.reduce(
-          (sum, item) => sum + item.price * item.quantity, 0
-        )
-      }
-    }
-
-    case 'cart/itemRemoved': {
-      const newItems = state.items.filter(
-        item => item.id !== action.payload
-      )
-      return {
-        items: newItems,
-        totalAmount: newItems.reduce(
-          (sum, item) => sum + item.price * item.quantity, 0
-        )
-      }
-    }
-
-    case 'cart/cleared':
-      return initialState
-
-    default:
-      return state
-  }
-}
-
-// Создаем стор
-const store = createStore(cartReducer)
-
-// Подписываемся на изменения (в React это 
-// за нас будет делать селектор useSelector)
-// Шапка сайта «слушает» стор и пересчитывает общий счетчик
-store.subscribe(() => {
-  const state = store.getState()
-  const totalItemsCount = state.items.reduce(
-    (count, item) => count + item.quantity, 0
+  return (
+    <button
+      className={mode === 'dark' ? styles.dark : styles.light}
+      onClick={() => dispatch(themeToggled())}
+    >
+      Текущая тема: {mode === 'dark' ? 'Тёмная' : 'Светлая'}
+    </button>
   )
-  
-  console.log(`
-    [Шапка сайта] Обновление! Всего товаров в корзине: ${totalItemsCount}
-  `)
-  console.log(`[Стор изнутри]:`, state)
-})
-
-// --- Имитация пути данных ---
-
-// 1. Пользователь зашел на сайт. В шапке: 0 товаров.
-// 2. Клик по кнопке «Добавить в корзину» условного смартфона:
-store.dispatch({
-  type: 'cart/itemAdded',
-  payload: { id: 'prod-1', name: 'Смартфон', price: 500 }
-}) 
-// Вывод: [Шапка сайта] Обновление! Всего товаров в корзине: 1
-
-// 3. Кликнули на тот же смартфон еще раз:
-store.dispatch({
-  type: 'cart/itemAdded',
-  payload: { id: 'prod-1', name: 'Смартфон', price: 500 }
-})
-// Вывод: [Шапка сайта] Обновление! Всего товаров в корзине: 2
-
-// 4. Очищаем корзину:
-store.dispatch({ type: 'cart/cleared' })
-// Вывод: [Шапка сайта] Обновление! Всего товаров в корзине: 0
+}
 ```
 
-### 3. Redux против useState: Что и куда?
+Разберём, что здесь происходит:
 
-Архитектурный вопрос из задания очень важен, чтобы не превратить Redux в свалку.
+- `useAppSelector((state) => state.theme.mode)` — читаем только нужное значение, не весь `state.theme`. Так компонент перерисуется только при изменении именно `mode`.
+- `dispatch(themeToggled())` — вызываем action creator без аргументов (напомню, `themeToggled` не принимает payload), результат — объект `{ type: 'theme/themeToggled' }`, который уходит в store.
+- Класс кнопки выбирается условно прямо в JSX — простой и читаемый способ для двух вариантов; если состояний станет больше трёх, обычно переходят на `classnames`/`clsx` библиотеку, но для двух значений это избыточно.
 
-#### В Redux (Глобальное состояние)
+### 3. Проверка в Redux DevTools
 
-Сюда идет то, что нужно **многим независимым компонентам** на разных уровнях вложенности, или то, что должно **сохраняться** при переходах между страницами:
+1. Подключите `<ThemeToggle />` куда-нибудь в `App.tsx`, чтобы она реально рендерилась.
+2. Откройте вкладку **Redux** в DevTools браузера.
+3. Кликните по кнопке несколько раз.
+4. В **Action log** должна появляться последовательность записей `theme/themeToggled` — по одной на каждый клик.
+5. Кликните на любую из записей → во вкладке **Diff** увидите, как `mode` переключался между `"light"` и `"dark"` на каждом шаге.
+6. Попробуйте **time-travel**: перетащите ползунок истории на несколько шагов назад — кнопка в UI должна визуально «вернуться» к прошлому состоянию (другой цвет фона, другой текст).
 
-* **Данные корзины** (нужны в шапке, на странице самой корзины, в карточке товара, чтобы показать "Уже в корзине").
-* **Статус авторизации и данные юзера** (нужны везде: для роутинга, аватара в шапке, оформления заказа).
-* **Тема оформления** (dark/light), если она влияет на всё приложение глобально.
+Если в логе вместо `theme/themeToggled` видите что-то другое (например, action вообще не появляется) — проверьте: `<Provider store={store}>` действительно оборачивает `App`, и `themeReducer` зарегистрирован в `store.ts` под ключом `theme` (иначе `state.theme` будет `undefined`, и селектор упадёт с ошибкой при обращении к `.mode`).
 
-#### В useState / useReducer (Локальное состояние)
+---
 
-То, что нужно **только одному компоненту** или его прямым детям прямо сейчас. Если компонент размонтируется — эти данные можно спокойно стереть:
+## Дополнительные ресурсы
 
-* **Состояние ввода в input** (текст сообщения, поля ввода в форме до нажатия кнопки "Отправить").
-* **Открыта/закрыта модалка** или выпадающий список (dropdown).
-* **Текущая выбранная вкладка** (Tab 1, Tab 2) внутри конкретного блока.
-* **Локальный статус загрузки (isLoading)** для мелкого компонента, если эти данные больше никому не нужны.
+- Redux Toolkit: https://redux-toolkit.js.org
+- Redux core: https://redux.js.org
+- React Redux: https://react-redux.js.org
